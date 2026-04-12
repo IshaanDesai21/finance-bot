@@ -3,6 +3,7 @@ from discord.ext import commands
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import os
 import json
 import re
@@ -74,8 +75,13 @@ class NotesModal(discord.ui.Modal, title="Additional Notes"):
             quantity = re.sub(r"[^0-9]", "", self.quantity) or "1"
             notes = self.notes.value.strip() if self.notes.value else ""
 
-            timestamp = datetime.now(ZoneInfo("America/Chicago")).strftime("%d/%m/%Y %I:%M %p")
+            timestamp = datetime.now(
+                ZoneInfo("America/Chicago")
+            ).strftime("%d/%m/%Y %I:%M %p")
 
+            # ----------------------------
+            # GOOGLE SHEETS WRITE
+            # ----------------------------
             if sheet:
                 sheet.append_row([
                     item,
@@ -90,11 +96,13 @@ class NotesModal(discord.ui.Modal, title="Additional Notes"):
 
             total = float(price) * int(quantity)
 
+            # PRIVATE CONFIRMATION
             await interaction.followup.send(
                 f"✅ Order placed: **{item} x{quantity}** (Total: ${total:.2f})",
                 ephemeral=True
             )
 
+            # PUBLIC LOG
             await interaction.channel.send(
                 f"📦 **New Order Logged**\n"
                 f"**Item:** {item}\n"
@@ -106,8 +114,17 @@ class NotesModal(discord.ui.Modal, title="Additional Notes"):
                 f"**Time:** {timestamp}"
             )
 
+            # ----------------------------
+            # REMOVE BUTTON MESSAGE
+            # ----------------------------
+            try:
+                await interaction.message.edit(view=None)
+            except:
+                pass
+
         except Exception:
             traceback.print_exc()
+
             if not interaction.response.is_done():
                 await interaction.response.send_message(
                     "❌ Failed to submit order.",
@@ -137,14 +154,14 @@ class OrderModal(discord.ui.Modal, title="Place Order"):
         )
 
         await interaction.response.send_message(
-            "✅ Step 1 complete. Click below to add notes and finish your order.",
+            "✅ Step 1 complete. Click below to finish your order.",
             view=view,
             ephemeral=True
         )
 
 
 # ----------------------------
-# BUTTON → OPENS NOTES MODAL
+# BUTTON VIEW
 # ----------------------------
 class NotesButtonView(discord.ui.View):
 
