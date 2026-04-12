@@ -74,7 +74,7 @@ class NotesModal(discord.ui.Modal, title="Additional Notes"):
             quantity = re.sub(r"[^0-9]", "", self.quantity) or "1"
             notes = self.notes.value.strip() if self.notes.value else ""
 
-            timestamp = datetime.now().strftime("%d/%m/%Y %H:%M")
+            timestamp = datetime.now(ZoneInfo("America/Chicago")).strftime("%d/%m/%Y %I:%M %p")
 
             if sheet:
                 sheet.append_row([
