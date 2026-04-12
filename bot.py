@@ -16,6 +16,12 @@ intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ----------------------------
+# IN-MEMORY TEAM STORAGE
+# user_id (str) -> team name (str)
+# ----------------------------
+user_teams = {}
+
+# ----------------------------
 # GOOGLE SHEETS SETUP
 # ----------------------------
 sheet = None
@@ -48,7 +54,35 @@ def get_next_row(sheet):
 
 
 # ----------------------------
-# CATEGORY DROPDOWN
+# TEAM DROPDOWN (for /set-team)
+# ----------------------------
+class TeamSelectView(discord.ui.View):
+
+    def __init__(self):
+        super().__init__(timeout=120)
+
+    @discord.ui.select(
+        placeholder="Select your team",
+        options=[
+            discord.SelectOption(label="FRC",         value="FRC"),
+            discord.SelectOption(label="Kunai",       value="Kunai"),
+            discord.SelectOption(label="Hunga Munga", value="Hunga Munga"),
+            discord.SelectOption(label="Atl Atl",     value="Atl Atl"),
+            discord.SelectOption(label="Slingshot",   value="Slingshot"),
+        ]
+    )
+    async def select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
+        team = select.values[0]
+        user_teams[str(interaction.user.id)] = team
+
+        await interaction.response.edit_message(
+            content=f"✅ You've been assigned to **{team}**! You can now use `/order`.",
+            view=None
+        )
+
+
+# ----------------------------
+# CATEGORY DROPDOWN (for /order)
 # ----------------------------
 class CategoryView(discord.ui.View):
 
@@ -70,18 +104,18 @@ class CategoryView(discord.ui.View):
 
         try:
             category = select.values[0].lower()
-            item, company, link, price, quantity, notes = self.data
+            item, company, link, price, quantity, notes, team = self.data
 
             timestamp = datetime.now(
                 ZoneInfo("America/Chicago")
             ).strftime("%d/%m/%Y %I:%M %p")
 
-            # WRITE TO SHEET
+            # WRITE TO SHEET — now includes team in column J
             if sheet:
                 row = get_next_row(sheet)
 
                 sheet.update(
-                    f"A{row}:I{row}",
+                    f"A{row}:J{row}",
                     [[
                         item,
                         company,
@@ -91,7 +125,8 @@ class CategoryView(discord.ui.View):
                         notes,
                         category,
                         interaction.user.name,
-                        timestamp
+                        timestamp,
+                        team          # ← new Team column
                     ]],
                     value_input_option="USER_ENTERED"
                 )
@@ -112,11 +147,11 @@ class CategoryView(discord.ui.View):
                 f"**Quantity:** {quantity}\n"
                 f"**Category:** {category}\n"
                 f"**Notes:** {notes if notes else 'None'}\n"
+                f"**Team:** {team}\n"
                 f"**User:** {interaction.user.mention}\n"
                 f"**Time:** {timestamp}"
             )
 
-            # remove dropdown after use
             await interaction.message.edit(view=None)
 
         except Exception:
@@ -146,11 +181,11 @@ class NotesModal(discord.ui.Modal, title="Finalize Order"):
     async def on_submit(self, interaction: discord.Interaction):
 
         try:
-            item, company, link, price, quantity = self.data
+            item, company, link, price, quantity, team = self.data
 
             notes = self.notes.value.strip() if self.notes.value else ""
 
-            view = CategoryView((item, company, link, price, quantity, notes))
+            view = CategoryView((item, company, link, price, quantity, notes, team))
 
             await interaction.response.send_message(
                 "Select a category to finish your order:",
@@ -167,7 +202,7 @@ class NotesModal(discord.ui.Modal, title="Finalize Order"):
 
 
 # ----------------------------
-# CONTINUE BUTTON VIEW (FIXED FLOW)
+# CONTINUE BUTTON VIEW
 # ----------------------------
 class ContinueView(discord.ui.View):
 
@@ -177,7 +212,6 @@ class ContinueView(discord.ui.View):
 
     @discord.ui.button(label="Continue Order", style=discord.ButtonStyle.green)
     async def continue_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-
         await interaction.response.send_modal(NotesModal(self.data))
 
 
@@ -186,26 +220,30 @@ class ContinueView(discord.ui.View):
 # ----------------------------
 class OrderModal(discord.ui.Modal, title="Place Order"):
 
-    item = discord.ui.TextInput(label="Item")
-    company = discord.ui.TextInput(label="Company")
-    link = discord.ui.TextInput(label="Link")
-    price = discord.ui.TextInput(label="Price")
+    item     = discord.ui.TextInput(label="Item")
+    company  = discord.ui.TextInput(label="Company")
+    link     = discord.ui.TextInput(label="Link")
+    price    = discord.ui.TextInput(label="Price")
     quantity = discord.ui.TextInput(label="Quantity", placeholder="e.g. 1")
+
+    def __init__(self, team: str):
+        super().__init__()
+        self.team = team
 
     async def on_submit(self, interaction: discord.Interaction):
 
         try:
-            item = self.item.value.strip()
-            company = self.company.value.strip()
-            link = self.link.value.strip()
+            item     = self.item.value.strip()
+            company  = self.company.value.strip()
+            link     = self.link.value.strip()
 
-            price_raw = re.sub(r"[^0-9.]", "", self.price.value) or "0"
-            quantity_raw = re.sub(r"[^0-9]", "", self.quantity.value) or "1"
+            price_raw    = re.sub(r"[^0-9.]", "", self.price.value) or "0"
+            quantity_raw = re.sub(r"[^0-9]", "",  self.quantity.value) or "1"
 
-            price = float(price_raw)
+            price    = float(price_raw)
             quantity = int(quantity_raw)
 
-            data = (item, company, link, price, quantity)
+            data = (item, company, link, price, quantity, self.team)
 
             view = ContinueView(data)
 
@@ -224,11 +262,30 @@ class OrderModal(discord.ui.Modal, title="Place Order"):
 
 
 # ----------------------------
-# COMMAND
+# COMMANDS
 # ----------------------------
+@bot.tree.command(name="set-team", description="Set your team (one-time setup required before ordering)")
+async def set_team(interaction: discord.Interaction):
+    view = TeamSelectView()
+    await interaction.response.send_message(
+        "Select your team below. This only needs to be done once:",
+        view=view,
+        ephemeral=True
+    )
+
+
 @bot.tree.command(name="order", description="Place a robotics order")
 async def order(interaction: discord.Interaction):
-    await interaction.response.send_modal(OrderModal())
+    team = user_teams.get(str(interaction.user.id))
+
+    if not team:
+        await interaction.response.send_message(
+            "⚠️ You need to set your team first! Run `/set-team` once before placing orders.",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.send_modal(OrderModal(team))
 
 
 # ----------------------------
