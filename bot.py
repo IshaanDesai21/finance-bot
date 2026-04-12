@@ -44,7 +44,15 @@ except Exception as e:
 
 
 # ----------------------------
-# STEP 2 MODAL (NOTES)
+# FIND NEXT EMPTY ROW (FIX)
+# ----------------------------
+def get_next_row(sheet):
+    col = sheet.col_values(1)  # Column A only
+    return len([x for x in col if x.strip() != ""]) + 1
+
+
+# ----------------------------
+# STEP 2 MODAL
 # ----------------------------
 class NotesModal(discord.ui.Modal, title="Additional Notes"):
 
@@ -68,56 +76,61 @@ class NotesModal(discord.ui.Modal, title="Additional Notes"):
             await interaction.response.defer(ephemeral=True)
 
             # ----------------------------
-            # CLEAN INPUTS
+            # CLEAN DATA
             # ----------------------------
-            item_clean = str(self.item).strip()
-            company_clean = str(self.company).strip()
-            link_clean = str(self.link).strip()
+            item = str(self.item).strip()
+            company = str(self.company).strip()
+            link = str(self.link).strip()
 
-            price_clean = re.sub(r"[^0-9.]", "", str(self.price).strip()) or "0"
-            quantity_clean = re.sub(r"[^0-9]", "", str(self.quantity).strip()) or "1"
+            price_raw = re.sub(r"[^0-9.]", "", str(self.price)) or "0"
+            quantity_raw = re.sub(r"[^0-9]", "", str(self.quantity)) or "1"
 
-            price_float = float(price_clean)
-            quantity_int = int(quantity_clean)
+            price = float(price_raw)
+            quantity = int(quantity_raw)
 
-            notes_clean = self.notes.value.strip() if self.notes.value else ""
+            notes = self.notes.value.strip() if self.notes.value else ""
 
             timestamp = datetime.now(
                 ZoneInfo("America/Chicago")
             ).strftime("%d/%m/%Y %I:%M %p")
 
             # ----------------------------
-            # GOOGLE SHEETS ROW (FIXED ORDER)
+            # WRITE TO SHEET (FIXED ROW LOGIC)
             # ----------------------------
             if sheet:
-                sheet.append_row([
-                    item_clean,
-                    company_clean,
-                    link_clean,
-                    price_float,     # REAL NUMBER (fixes apostrophe issue)
-                    quantity_int,    # REAL NUMBER
-                    notes_clean,
-                    interaction.user.name,
-                    timestamp
-                ], value_input_option="USER_ENTERED")
+                row = get_next_row(sheet)
 
-            total = price_float * quantity_int
+                sheet.update(
+                    f"A{row}:H{row}",
+                    [[
+                        item,
+                        company,
+                        link,
+                        price,
+                        quantity,
+                        notes,
+                        interaction.user.name,
+                        timestamp
+                    ]],
+                    value_input_option="USER_ENTERED"
+                )
 
-            # clickable item
-            item_linked = f"[{item_clean}]({link_clean})" if link_clean else item_clean
+            total = price * quantity
+
+            item_linked = f"[{item}]({link})" if link else item
 
             await interaction.followup.send(
-                f"✅ Order placed: **{item_clean} x{quantity_int}** (Total: ${total:.2f})",
+                f"✅ Order placed: **{item} x{quantity}** (Total: ${total:.2f})",
                 ephemeral=True
             )
 
             await interaction.channel.send(
                 f"📦 **New Order Logged**\n"
                 f"**Item:** {item_linked}\n"
-                f"**Company:** {company_clean}\n"
-                f"**Price:** {price_float}\n"
-                f"**Quantity:** {quantity_int}\n"
-                f"**Notes:** {notes_clean if notes_clean else 'None'}\n"
+                f"**Company:** {company}\n"
+                f"**Price:** {price}\n"
+                f"**Quantity:** {quantity}\n"
+                f"**Notes:** {notes if notes else 'None'}\n"
                 f"**User:** {interaction.user.mention}\n"
                 f"**Time:** {timestamp}"
             )
@@ -129,7 +142,6 @@ class NotesModal(discord.ui.Modal, title="Additional Notes"):
 
         except Exception:
             traceback.print_exc()
-
             if not interaction.response.is_done():
                 await interaction.response.send_message(
                     "❌ Failed to submit order.",
@@ -172,7 +184,6 @@ class NotesButtonView(discord.ui.View):
 
     def __init__(self, item, company, link, price, quantity):
         super().__init__(timeout=120)
-
         self.item = item
         self.company = company
         self.link = link
