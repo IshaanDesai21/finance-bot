@@ -15,7 +15,7 @@ intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ----------------------------
-# GOOGLE SHEETS AUTH
+# GOOGLE SHEETS SETUP
 # ----------------------------
 sheet = None
 
@@ -43,7 +43,7 @@ except Exception as e:
 
 
 # ----------------------------
-# MODAL
+# ORDER MODAL
 # ----------------------------
 class OrderModal(discord.ui.Modal, title="Place Order"):
 
@@ -51,7 +51,11 @@ class OrderModal(discord.ui.Modal, title="Place Order"):
     company = discord.ui.TextInput(label="Company")
     link = discord.ui.TextInput(label="Link")
     price = discord.ui.TextInput(label="Price")
-    quantity = discord.ui.TextInput(label="Quantity", default="1")
+
+    quantity = discord.ui.TextInput(
+        label="Quantity",
+        placeholder="e.g. 1"
+    )
 
     notes = discord.ui.TextInput(
         label="Notes (optional)",
@@ -74,7 +78,7 @@ class OrderModal(discord.ui.Modal, title="Place Order"):
             timestamp = datetime.now().strftime("%d/%m/%Y %H:%M")
 
             # ----------------------------
-            # GOOGLE SHEETS WRITE (SAFE)
+            # GOOGLE SHEETS WRITE
             # ----------------------------
             if sheet:
                 sheet.append_row([
@@ -87,16 +91,16 @@ class OrderModal(discord.ui.Modal, title="Place Order"):
                     interaction.user.name,
                     timestamp
                 ])
-            else:
-                print("⚠️ Sheet not connected, skipping write")
 
             total = float(price) * int(quantity)
 
+            # PRIVATE RESPONSE
             await interaction.followup.send(
                 f"✅ Order placed: **{item} x{quantity}** (Total: ${total:.2f})",
                 ephemeral=True
             )
 
+            # PUBLIC LOG
             await interaction.channel.send(
                 f"📦 **New Order Logged**\n"
                 f"**Item:** {item}\n"
@@ -109,35 +113,35 @@ class OrderModal(discord.ui.Modal, title="Place Order"):
             )
 
         except Exception as e:
-            print("❌ ERROR IN MODAL:")
+            print("❌ MODAL ERROR:")
             traceback.print_exc()
 
-            try:
-                await interaction.followup.send(
-                    "❌ Something went wrong while saving your order.",
-                    ephemeral=True
-                )
-            except:
-                pass
+            await interaction.followup.send(
+                "❌ Something went wrong while submitting your order.",
+                ephemeral=True
+            )
 
 
 # ----------------------------
-# /ORDER COMMAND
+# /ORDER COMMAND (NO RESTRICTIONS)
 # ----------------------------
 @bot.tree.command(name="order", description="Place a robotics order")
 async def order(interaction: discord.Interaction):
     try:
         await interaction.response.send_modal(OrderModal())
+
     except Exception as e:
-        print("❌ ORDER ERROR:", e)
-        await interaction.response.send_message(
-            "❌ Could not open order form.",
-            ephemeral=True
-        )
+        print("❌ ORDER COMMAND ERROR:", e)
+
+        if not interaction.response.is_done():
+            await interaction.response.send_message(
+                "❌ Could not open order form.",
+                ephemeral=True
+            )
 
 
 # ----------------------------
-# READY EVENT (ONLY ONCE)
+# READY EVENT
 # ----------------------------
 @bot.event
 async def on_ready():
