@@ -27,11 +27,7 @@ try:
     ]
 
     creds_dict = json.loads(os.getenv("GOOGLE_CREDS"))
-
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(
-        creds_dict,
-        scope
-    )
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 
     client = gspread.authorize(creds)
     sheet = client.open("Robotics Budget").sheet1
@@ -52,7 +48,7 @@ def get_next_row(sheet):
 
 
 # ----------------------------
-# CATEGORY DROPDOWN VIEW
+# CATEGORY DROPDOWN
 # ----------------------------
 class CategoryView(discord.ui.View):
 
@@ -74,14 +70,13 @@ class CategoryView(discord.ui.View):
 
         try:
             category = select.values[0].lower()
-
             item, company, link, price, quantity, notes = self.data
 
             timestamp = datetime.now(
                 ZoneInfo("America/Chicago")
             ).strftime("%d/%m/%Y %I:%M %p")
 
-            # WRITE TO SHEETS
+            # WRITE TO SHEET
             if sheet:
                 row = get_next_row(sheet)
 
@@ -121,7 +116,7 @@ class CategoryView(discord.ui.View):
                 f"**Time:** {timestamp}"
             )
 
-            # REMOVE DROPDOWN
+            # remove dropdown after use
             await interaction.message.edit(view=None)
 
         except Exception:
@@ -138,13 +133,9 @@ class CategoryView(discord.ui.View):
 # ----------------------------
 class NotesModal(discord.ui.Modal, title="Finalize Order"):
 
-    def __init__(self, item, company, link, price, quantity):
+    def __init__(self, data):
         super().__init__()
-        self.item = item
-        self.company = company
-        self.link = link
-        self.price = price
-        self.quantity = quantity
+        self.data = data
 
     notes = discord.ui.TextInput(
         label="Notes (optional)",
@@ -155,15 +146,7 @@ class NotesModal(discord.ui.Modal, title="Finalize Order"):
     async def on_submit(self, interaction: discord.Interaction):
 
         try:
-            item = str(self.item).strip()
-            company = str(self.company).strip()
-            link = str(self.link).strip()
-
-            price_raw = re.sub(r"[^0-9.]", "", str(self.price)) or "0"
-            quantity_raw = re.sub(r"[^0-9]", "", str(self.quantity)) or "1"
-
-            price = float(price_raw)
-            quantity = int(quantity_raw)
+            item, company, link, price, quantity = self.data
 
             notes = self.notes.value.strip() if self.notes.value else ""
 
@@ -184,6 +167,21 @@ class NotesModal(discord.ui.Modal, title="Finalize Order"):
 
 
 # ----------------------------
+# CONTINUE BUTTON VIEW (FIXED FLOW)
+# ----------------------------
+class ContinueView(discord.ui.View):
+
+    def __init__(self, data):
+        super().__init__(timeout=120)
+        self.data = data
+
+    @discord.ui.button(label="Continue Order", style=discord.ButtonStyle.green)
+    async def continue_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+        await interaction.response.send_modal(NotesModal(self.data))
+
+
+# ----------------------------
 # ORDER MODAL
 # ----------------------------
 class OrderModal(discord.ui.Modal, title="Place Order"):
@@ -196,15 +194,33 @@ class OrderModal(discord.ui.Modal, title="Place Order"):
 
     async def on_submit(self, interaction: discord.Interaction):
 
-        await interaction.response.send_modal(
-            NotesModal(
-                self.item.value,
-                self.company.value,
-                self.link.value,
-                self.price.value,
-                self.quantity.value
+        try:
+            item = self.item.value.strip()
+            company = self.company.value.strip()
+            link = self.link.value.strip()
+
+            price_raw = re.sub(r"[^0-9.]", "", self.price.value) or "0"
+            quantity_raw = re.sub(r"[^0-9]", "", self.quantity.value) or "1"
+
+            price = float(price_raw)
+            quantity = int(quantity_raw)
+
+            data = (item, company, link, price, quantity)
+
+            view = ContinueView(data)
+
+            await interaction.response.send_message(
+                "Click to continue your order:",
+                view=view,
+                ephemeral=True
             )
-        )
+
+        except Exception:
+            traceback.print_exc()
+            await interaction.response.send_message(
+                "❌ Failed to start order.",
+                ephemeral=True
+            )
 
 
 # ----------------------------
