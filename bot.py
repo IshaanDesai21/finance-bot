@@ -30,7 +30,7 @@ try:
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 
     client = gspread.authorize(creds)
-    sheet = client.open("Robotics Budget").sheet1
+    sheet = client.open("Westwood Finances").sheet1
 
     print("✅ Google Sheets connected")
 
