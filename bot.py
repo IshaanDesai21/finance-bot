@@ -3,6 +3,8 @@ from discord.ext import commands
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
+import os
+import json
 import re
 
 # ----------------------------
@@ -12,15 +14,17 @@ intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ----------------------------
-# GOOGLE SHEETS SETUP
+# GOOGLE SHEETS AUTH (RAILWAY SAFE)
 # ----------------------------
 scope = [
     "https://spreadsheets.google.com/feeds",
     "https://www.googleapis.com/auth/drive"
 ]
 
-creds = ServiceAccountCredentials.from_json_keyfile_name(
-    "credentials.json",
+creds_dict = json.loads(os.getenv("GOOGLE_CREDS"))
+
+creds = ServiceAccountCredentials.from_json_keyfile_dict(
+    creds_dict,
     scope
 )
 
@@ -29,13 +33,13 @@ sheet = client.open("Robotics Budget").sheet1
 
 
 # ----------------------------
-# MODAL (PRIVATE INPUT FORM)
+# MODAL (PRIVATE FORM)
 # ----------------------------
 class ExpenseModal(discord.ui.Modal, title="Log Expense"):
 
     item = discord.ui.TextInput(
         label="Item (be specific)",
-        placeholder="e.g. NEO motor, not just 'motor'"
+        placeholder="e.g. NEO motor, gearbox, controller"
     )
 
     company = discord.ui.TextInput(label="Company")
@@ -44,22 +48,16 @@ class ExpenseModal(discord.ui.Modal, title="Log Expense"):
 
     async def on_submit(self, interaction: discord.Interaction):
 
-        # ----------------------------
         # CLEAN DATA
-        # ----------------------------
-
         item_clean = self.item.value.strip()
-
         company_clean = self.company.value.strip().title()
 
-        # remove $ and any non-number except dot
+        # remove $ and non-numeric chars except dot
         price_clean = re.sub(r"[^0-9.]", "", self.price.value)
 
         timestamp = datetime.now().strftime("%d/%m/%Y %H:%M")
 
-        # ----------------------------
         # GOOGLE SHEETS WRITE
-        # ----------------------------
         sheet.append_row([
             item_clean,
             company_clean,
@@ -69,17 +67,13 @@ class ExpenseModal(discord.ui.Modal, title="Log Expense"):
             timestamp
         ])
 
-        # ----------------------------
         # PRIVATE RESPONSE
-        # ----------------------------
         await interaction.response.send_message(
             f"✅ Added **{item_clean}** (${price_clean})",
             ephemeral=True
         )
 
-        # ----------------------------
-        # PUBLIC MESSAGE
-        # ----------------------------
+        # PUBLIC LOG
         await interaction.channel.send(
             f"📦 **New Expense Logged**\n"
             f"**Item:** {item_clean}\n"
@@ -91,7 +85,7 @@ class ExpenseModal(discord.ui.Modal, title="Log Expense"):
 
 
 # ----------------------------
-# ROLE + COMMAND CHECK
+# ROLE PROTECTION
 # ----------------------------
 @bot.tree.command(name="expense", description="Log a robotics expense")
 async def expense(interaction: discord.Interaction):
@@ -118,6 +112,6 @@ async def on_ready():
 
 
 # ----------------------------
-# RUN BOT
+# RUN BOT (RAILWAY SAFE)
 # ----------------------------
-bot.run("YOUR_BOT_TOKEN")
+bot.run(os.getenv("DISCORD_TOKEN"))
