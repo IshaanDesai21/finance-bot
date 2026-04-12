@@ -44,7 +44,7 @@ except Exception as e:
 
 
 # ----------------------------
-# STEP 2: NOTES MODAL
+# STEP 2 MODAL (NOTES)
 # ----------------------------
 class NotesModal(discord.ui.Modal, title="Additional Notes"):
 
@@ -67,63 +67,61 @@ class NotesModal(discord.ui.Modal, title="Additional Notes"):
         try:
             await interaction.response.defer(ephemeral=True)
 
-            item = self.item.strip()
-            company = self.company.strip()
-            link = self.link.strip()
+            # ----------------------------
+            # CLEAN INPUTS
+            # ----------------------------
+            item_clean = str(self.item).strip()
+            company_clean = str(self.company).strip()
+            link_clean = str(self.link).strip()
 
-            raw_price = re.sub(r"[^0-9.]", "", str(self.price).strip())
-            price = str(float(raw_price)) if raw_price else "0"
+            price_clean = re.sub(r"[^0-9.]", "", str(self.price).strip()) or "0"
+            quantity_clean = re.sub(r"[^0-9]", "", str(self.quantity).strip()) or "1"
 
-            quantity_raw = re.sub(r"[^0-9]", "", str(self.quantity).strip())
-            quantity = quantity_raw if quantity_raw else "1"
+            price_float = float(price_clean)
+            quantity_int = int(quantity_clean)
 
-            notes = self.notes.value.strip() if self.notes.value else ""
+            notes_clean = self.notes.value.strip() if self.notes.value else ""
 
             timestamp = datetime.now(
                 ZoneInfo("America/Chicago")
             ).strftime("%d/%m/%Y %I:%M %p")
 
             # ----------------------------
-            # GOOGLE SHEETS WRITE
+            # GOOGLE SHEETS ROW (FIXED ORDER)
             # ----------------------------
             if sheet:
                 sheet.append_row([
-                    item,
-                    company,
-                    link,
-                    price,
-                    quantity,
-                    notes,
+                    item_clean,
+                    company_clean,
+                    link_clean,
+                    price_float,     # REAL NUMBER (fixes apostrophe issue)
+                    quantity_int,    # REAL NUMBER
+                    notes_clean,
                     interaction.user.name,
                     timestamp
-                ])
+                ], value_input_option="USER_ENTERED")
 
-            total = float(price) * int(quantity)
+            total = price_float * quantity_int
 
-            # ----------------------------
-            # 🔥 CLICKABLE ITEM LINK (FIX)
-            # ----------------------------
-            item_linked = f"[{item}]({link})" if link else item
+            # clickable item
+            item_linked = f"[{item_clean}]({link_clean})" if link_clean else item_clean
 
-            # PRIVATE RESPONSE
             await interaction.followup.send(
-                f"✅ Order placed: **{item} x{quantity}** (Total: ${total:.2f})",
+                f"✅ Order placed: **{item_clean} x{quantity_int}** (Total: ${total:.2f})",
                 ephemeral=True
             )
 
-            # PUBLIC LOG
             await interaction.channel.send(
                 f"📦 **New Order Logged**\n"
                 f"**Item:** {item_linked}\n"
-                f"**Company:** {company}\n"
-                f"**Price:** {price}\n"
-                f"**Quantity:** {quantity}\n"
-                f"**Notes:** {notes if notes else 'None'}\n"
+                f"**Company:** {company_clean}\n"
+                f"**Price:** {price_float}\n"
+                f"**Quantity:** {quantity_int}\n"
+                f"**Notes:** {notes_clean if notes_clean else 'None'}\n"
                 f"**User:** {interaction.user.mention}\n"
                 f"**Time:** {timestamp}"
             )
 
-            # remove button message
             try:
                 await interaction.message.edit(view=None)
             except:
@@ -131,6 +129,7 @@ class NotesModal(discord.ui.Modal, title="Additional Notes"):
 
         except Exception:
             traceback.print_exc()
+
             if not interaction.response.is_done():
                 await interaction.response.send_message(
                     "❌ Failed to submit order.",
@@ -139,7 +138,7 @@ class NotesModal(discord.ui.Modal, title="Additional Notes"):
 
 
 # ----------------------------
-# STEP 1: ORDER MODAL
+# STEP 1 MODAL
 # ----------------------------
 class OrderModal(discord.ui.Modal, title="Place Order"):
 
