@@ -49,16 +49,16 @@ except Exception as e:
 # FAKE PARTS FOR /test
 # ----------------------------
 TEST_PARTS = [
-    ("Test Servo Motor",       "ServoKing",    "https://example.com/servo",    12.99,  2,  "hardware"),
-    ("Test Limit Switch",      "ElectroSupply","https://example.com/switch",    3.49,  5,  "hardware"),
-    ("Test Aluminum Bracket",  "MetalDepot",   "https://example.com/bracket",   8.75,  4,  "hardware"),
-    ("Test Arduino Nano",      "RoboShop",     "https://example.com/arduino",  22.00,  1,  "hardware"),
-    ("Test Rubber Wheel",      "WheelWorld",   "https://example.com/wheel",    15.50,  3,  "hardware"),
-    ("Test Battery Pack",      "PowerCell",    "https://example.com/battery",  34.99,  1,  "hardware"),
-    ("Test Steel Bolt Set",    "BoltBarn",     "https://example.com/bolts",     6.25, 10,  "hardware"),
-    ("Test CAD License",       "AutodeskTest", "https://example.com/cad",      49.99,  1,  "software"),
-    ("Test Zip Ties (100pk)",  "FastenerPro",  "https://example.com/zipties",   4.99,  2,  "miscellaneous"),
-    ("Test Bearing Kit",       "SpinRight",    "https://example.com/bearings", 18.40,  2,  "hardware"),
+    ("Test Servo Motor",       "ServoKing",     "https://example.com/servo",    12.99,  2,  "hardware"),
+    ("Test Limit Switch",      "ElectroSupply", "https://example.com/switch",    3.49,  5,  "hardware"),
+    ("Test Aluminum Bracket",  "MetalDepot",    "https://example.com/bracket",   8.75,  4,  "hardware"),
+    ("Test Arduino Nano",      "RoboShop",      "https://example.com/arduino",  22.00,  1,  "hardware"),
+    ("Test Rubber Wheel",      "WheelWorld",    "https://example.com/wheel",    15.50,  3,  "hardware"),
+    ("Test Battery Pack",      "PowerCell",     "https://example.com/battery",  34.99,  1,  "hardware"),
+    ("Test Steel Bolt Set",    "BoltBarn",      "https://example.com/bolts",     6.25, 10,  "hardware"),
+    ("Test CAD License",       "AutodeskTest",  "https://example.com/cad",      49.99,  1,  "software"),
+    ("Test Zip Ties (100pk)",  "FastenerPro",   "https://example.com/zipties",   4.99,  2,  "miscellaneous"),
+    ("Test Bearing Kit",       "SpinRight",     "https://example.com/bearings", 18.40,  2,  "hardware"),
 ]
 
 
@@ -72,6 +72,10 @@ def get_next_row(sheet):
 
 # ----------------------------
 # SHARED WRITE TO SHEET
+# Column layout:
+# A=item, B=company, C=link, D=price, E=quantity,
+# F=notes, G=category, H=team, I=total, J=timestamp,
+# (K-N gap), O=username
 # ----------------------------
 def write_order_to_sheet(sheet, row, item, company, link, price, quantity,
                           notes, category, team, timestamp, username):
@@ -86,7 +90,7 @@ def write_order_to_sheet(sheet, row, item, company, link, price, quantity,
             price,
             quantity,
             notes,
-            category,
+            category.capitalize(),
             team,
             total,
             timestamp
@@ -183,7 +187,7 @@ class CategoryView(discord.ui.View):
                 f"**Price:** ${price:.2f}\n"
                 f"**Quantity:** {quantity}\n"
                 f"**Total:** ${total:.2f}\n"
-                f"**Category:** {category}\n"
+                f"**Category:** {category.capitalize()}\n"
                 f"**Notes:** {notes if notes else 'None'}\n"
                 f"**Team:** {team}\n"
                 f"**User:** {interaction.user.mention}\n"
@@ -275,7 +279,7 @@ class OrderModal(discord.ui.Modal, title="Place Order"):
             link     = self.link.value.strip()
 
             price_raw    = re.sub(r"[^0-9.]", "", self.price.value) or "0"
-            quantity_raw = re.sub(r"[^0-9]", "",  self.quantity.value) or "1"
+            quantity_raw = re.sub(r"[^0-9]",  "", self.quantity.value) or "1"
 
             price    = float(price_raw)
             quantity = int(quantity_raw)
@@ -295,6 +299,76 @@ class OrderModal(discord.ui.Modal, title="Place Order"):
                 "❌ Failed to start order.",
                 ephemeral=True
             )
+
+
+# ----------------------------
+# TEST PASSWORD MODAL
+# ----------------------------
+class TestPasswordModal(discord.ui.Modal, title="Test Order Authentication"):
+
+    password = discord.ui.TextInput(
+        label="Password",
+        placeholder="Enter password to submit test order",
+        required=True
+    )
+
+    def __init__(self, team: str):
+        super().__init__()
+        self.team = team
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if self.password.value.strip() != "hi":
+            await interaction.response.send_message(
+                "❌ Incorrect password.",
+                ephemeral=True
+            )
+            return
+
+        try:
+            item, company, link, price, quantity, category = random.choice(TEST_PARTS)
+            notes     = "AUTO TEST ORDER"
+            timestamp = datetime.now(ZoneInfo("America/Chicago")).strftime("%d/%m/%Y %I:%M %p")
+            row       = get_next_row(sheet)
+
+            total = write_order_to_sheet(
+                sheet, row, item, company, link, price, quantity,
+                notes, category, self.team, timestamp, interaction.user.name
+            )
+
+            item_linked = f"[{item}]({link})"
+
+            await interaction.response.send_message(
+                f"🧪 **Test order submitted successfully!**\n"
+                f"**Item:** {item}\n"
+                f"**Company:** {company}\n"
+                f"**Price:** ${price:.2f} x{quantity} = **${total:.2f}**\n"
+                f"**Category:** {category.capitalize()}\n"
+                f"**Team:** {self.team}\n"
+                f"**Row written:** {row}",
+                ephemeral=True
+            )
+
+            await interaction.channel.send(
+                f"🧪 **Test Order Logged**\n"
+                f"**Item:** {item_linked}\n"
+                f"**Company:** {company}\n"
+                f"**Price:** ${price:.2f}\n"
+                f"**Quantity:** {quantity}\n"
+                f"**Total:** ${total:.2f}\n"
+                f"**Category:** {category.capitalize()}\n"
+                f"**Notes:** {notes}\n"
+                f"**Team:** {self.team}\n"
+                f"**User:** {interaction.user.mention}\n"
+                f"**Time:** {timestamp}"
+            )
+
+        except Exception:
+            traceback.print_exc()
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "❌ Test order failed. Check logs.",
+                    ephemeral=True
+                )
 
 
 # ----------------------------
@@ -358,12 +432,12 @@ def build_summary(rows: list[list], month: int, year: int) -> discord.Embed:
     team_lines = "\n".join(
         f"`{t:<12}` ${v:.2f}" for t, v in team_totals.items() if v > 0
     ) or "No orders this month."
-    embed.add_field(name="🤖 By Team", value=team_lines, inline=True)
+    embed.add_field(name="y Team", value=team_lines, inline=True)
 
     cat_lines = "\n".join(
         f"`{c.title():<14}` ${v:.2f}" for c, v in cat_totals.items() if v > 0
     ) or "No orders this month."
-    embed.add_field(name="🗂️ By Category", value=cat_lines, inline=True)
+    embed.add_field(name="By Category", value=cat_lines, inline=True)
 
     embed.set_footer(text="Data pulled from Westwood Finances sheet")
     return embed
@@ -430,49 +504,7 @@ async def test(interaction: discord.Interaction):
         await interaction.response.send_message("❌ Google Sheets is not connected.", ephemeral=True)
         return
 
-    await interaction.response.defer(ephemeral=True)
-
-    try:
-        item, company, link, price, quantity, category = random.choice(TEST_PARTS)
-        notes     = "AUTO TEST ORDER"
-        timestamp = datetime.now(ZoneInfo("America/Chicago")).strftime("%d/%m/%Y %I:%M %p")
-        row       = get_next_row(sheet)
-
-        total = write_order_to_sheet(
-            sheet, row, item, company, link, price, quantity,
-            notes, category, team, timestamp, interaction.user.name
-        )
-
-        item_linked = f"[{item}]({link})"
-
-        await interaction.followup.send(
-            f"🧪 **Test order submitted successfully!**\n"
-            f"**Item:** {item}\n"
-            f"**Company:** {company}\n"
-            f"**Price:** ${price:.2f} x{quantity} = **${total:.2f}**\n"
-            f"**Category:** {category}\n"
-            f"**Team:** {team}\n"
-            f"**Row written:** {row}",
-            ephemeral=True
-        )
-
-        await interaction.channel.send(
-            f"🧪 **Test Order Logged**\n"
-            f"**Item:** {item_linked}\n"
-            f"**Company:** {company}\n"
-            f"**Price:** ${price:.2f}\n"
-            f"**Quantity:** {quantity}\n"
-            f"**Total:** ${total:.2f}\n"
-            f"**Category:** {category}\n"
-            f"**Notes:** {notes}\n"
-            f"**Team:** {team}\n"
-            f"**User:** {interaction.user.mention}\n"
-            f"**Time:** {timestamp}"
-        )
-
-    except Exception:
-        traceback.print_exc()
-        await interaction.followup.send("❌ Test order failed. Check logs.")
+    await interaction.response.send_modal(TestPasswordModal(team))
 
 
 # ----------------------------
