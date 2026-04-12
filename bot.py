@@ -43,13 +43,12 @@ except Exception as e:
 
 
 # ----------------------------
-# STEP 2 MODAL (NOTES)
+# STEP 2: NOTES MODAL
 # ----------------------------
 class NotesModal(discord.ui.Modal, title="Additional Notes"):
 
     def __init__(self, item, company, link, price, quantity):
         super().__init__()
-
         self.item = item
         self.company = company
         self.link = link
@@ -59,11 +58,10 @@ class NotesModal(discord.ui.Modal, title="Additional Notes"):
     notes = discord.ui.TextInput(
         label="Notes (optional)",
         required=False,
-        placeholder="Promo code, urgency, specs, etc."
+        placeholder="Promo code, specs, urgency..."
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-
         try:
             item = self.item.strip()
             company = self.company.strip()
@@ -75,7 +73,6 @@ class NotesModal(discord.ui.Modal, title="Additional Notes"):
 
             timestamp = datetime.now().strftime("%d/%m/%Y %H:%M")
 
-            # GOOGLE SHEETS
             if sheet:
                 sheet.append_row([
                     item,
@@ -106,18 +103,16 @@ class NotesModal(discord.ui.Modal, title="Additional Notes"):
                 f"**Time:** {timestamp}"
             )
 
-        except Exception as e:
-            print("❌ ERROR IN NOTES MODAL:")
+        except Exception:
             traceback.print_exc()
-
             await interaction.response.send_message(
-                "❌ Something went wrong saving your order.",
+                "❌ Failed to submit order.",
                 ephemeral=True
             )
 
 
 # ----------------------------
-# STEP 1 MODAL (MAIN ORDER)
+# STEP 1: ORDER MODAL
 # ----------------------------
 class OrderModal(discord.ui.Modal, title="Place Order"):
 
@@ -129,27 +124,47 @@ class OrderModal(discord.ui.Modal, title="Place Order"):
 
     async def on_submit(self, interaction: discord.Interaction):
 
-        try:
-            # Immediately move to next step
-            await interaction.response.send_modal(
-                NotesModal(
-                    item=self.item.value,
-                    company=self.company.value,
-                    link=self.link.value,
-                    price=self.price.value,
-                    quantity=self.quantity.value
-                )
+        view = NotesButtonView(
+            item=self.item.value,
+            company=self.company.value,
+            link=self.link.value,
+            price=self.price.value,
+            quantity=self.quantity.value
+        )
+
+        await interaction.response.send_message(
+            "✅ Step 1 complete. Click below to finish your order.",
+            view=view,
+            ephemeral=True
+        )
+
+
+# ----------------------------
+# BUTTON → OPENS NOTES MODAL
+# ----------------------------
+class NotesButtonView(discord.ui.View):
+
+    def __init__(self, item, company, link, price, quantity):
+        super().__init__(timeout=120)
+
+        self.item = item
+        self.company = company
+        self.link = link
+        self.price = price
+        self.quantity = quantity
+
+    @discord.ui.button(label="Add Notes & Finish Order", style=discord.ButtonStyle.green)
+    async def finish(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+        await interaction.response.send_modal(
+            NotesModal(
+                self.item,
+                self.company,
+                self.link,
+                self.price,
+                self.quantity
             )
-
-        except Exception as e:
-            print("❌ ORDER MODAL ERROR:")
-            traceback.print_exc()
-
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    "❌ Could not continue order process.",
-                    ephemeral=True
-                )
+        )
 
 
 # ----------------------------
@@ -159,9 +174,8 @@ class OrderModal(discord.ui.Modal, title="Place Order"):
 async def order(interaction: discord.Interaction):
     try:
         await interaction.response.send_modal(OrderModal())
-
     except Exception as e:
-        print("❌ /ORDER ERROR:", e)
+        print("❌ ORDER ERROR:", e)
 
         if not interaction.response.is_done():
             await interaction.response.send_message(
