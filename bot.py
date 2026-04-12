@@ -44,17 +44,17 @@ except Exception as e:
 
 
 # ----------------------------
-# FIND NEXT EMPTY ROW (FIX)
+# FIND NEXT EMPTY ROW
 # ----------------------------
 def get_next_row(sheet):
-    col = sheet.col_values(1)  # Column A only
+    col = sheet.col_values(1)
     return len([x for x in col if x.strip() != ""]) + 1
 
 
 # ----------------------------
-# STEP 2 MODAL
+# STEP 2 MODAL (NOTES + CATEGORY)
 # ----------------------------
-class NotesModal(discord.ui.Modal, title="Additional Notes"):
+class NotesModal(discord.ui.Modal, title="Finalize Order"):
 
     def __init__(self, item, company, link, price, quantity):
         super().__init__()
@@ -70,14 +70,16 @@ class NotesModal(discord.ui.Modal, title="Additional Notes"):
         placeholder="Promo code, urgency, specs..."
     )
 
+    category = discord.ui.TextInput(
+        label="Category",
+        placeholder="hardware / software / outreach / food / miscellaneous"
+    )
+
     async def on_submit(self, interaction: discord.Interaction):
 
         try:
             await interaction.response.defer(ephemeral=True)
 
-            # ----------------------------
-            # CLEAN DATA
-            # ----------------------------
             item = str(self.item).strip()
             company = str(self.company).strip()
             link = str(self.link).strip()
@@ -89,19 +91,20 @@ class NotesModal(discord.ui.Modal, title="Additional Notes"):
             quantity = int(quantity_raw)
 
             notes = self.notes.value.strip() if self.notes.value else ""
+            category = self.category.value.strip().lower()
 
             timestamp = datetime.now(
                 ZoneInfo("America/Chicago")
             ).strftime("%d/%m/%Y %I:%M %p")
 
             # ----------------------------
-            # WRITE TO SHEET (FIXED ROW LOGIC)
+            # WRITE TO SHEET
             # ----------------------------
             if sheet:
                 row = get_next_row(sheet)
 
                 sheet.update(
-                    f"A{row}:H{row}",
+                    f"A{row}:I{row}",
                     [[
                         item,
                         company,
@@ -109,6 +112,7 @@ class NotesModal(discord.ui.Modal, title="Additional Notes"):
                         price,
                         quantity,
                         notes,
+                        category,
                         interaction.user.name,
                         timestamp
                     ]],
@@ -130,11 +134,13 @@ class NotesModal(discord.ui.Modal, title="Additional Notes"):
                 f"**Company:** {company}\n"
                 f"**Price:** {price}\n"
                 f"**Quantity:** {quantity}\n"
+                f"**Category:** {category}\n"
                 f"**Notes:** {notes if notes else 'None'}\n"
                 f"**User:** {interaction.user.mention}\n"
                 f"**Time:** {timestamp}"
             )
 
+            # REMOVE BUTTON
             try:
                 await interaction.message.edit(view=None)
             except:
@@ -142,6 +148,7 @@ class NotesModal(discord.ui.Modal, title="Additional Notes"):
 
         except Exception:
             traceback.print_exc()
+
             if not interaction.response.is_done():
                 await interaction.response.send_message(
                     "❌ Failed to submit order.",
