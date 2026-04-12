@@ -71,15 +71,9 @@ class NotesModal(discord.ui.Modal, title="Additional Notes"):
             company = self.company.strip()
             link = self.link.strip()
 
-            # ----------------------------
-            # CLEAN PRICE (FIX FOR ✓ ISSUE)
-            # ----------------------------
             raw_price = re.sub(r"[^0-9.]", "", str(self.price).strip())
             price = str(float(raw_price)) if raw_price else "0"
 
-            # ----------------------------
-            # CLEAN QUANTITY
-            # ----------------------------
             quantity_raw = re.sub(r"[^0-9]", "", str(self.quantity).strip())
             quantity = quantity_raw if quantity_raw else "1"
 
@@ -106,14 +100,21 @@ class NotesModal(discord.ui.Modal, title="Additional Notes"):
 
             total = float(price) * int(quantity)
 
+            # ----------------------------
+            # 🔥 CLICKABLE ITEM LINK (FIX)
+            # ----------------------------
+            item_linked = f"[{item}]({link})" if link else item
+
+            # PRIVATE RESPONSE
             await interaction.followup.send(
                 f"✅ Order placed: **{item} x{quantity}** (Total: ${total:.2f})",
                 ephemeral=True
             )
 
+            # PUBLIC LOG
             await interaction.channel.send(
                 f"📦 **New Order Logged**\n"
-                f"**Item:** {item}\n"
+                f"**Item:** {item_linked}\n"
                 f"**Company:** {company}\n"
                 f"**Price:** {price}\n"
                 f"**Quantity:** {quantity}\n"
