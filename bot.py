@@ -58,11 +58,14 @@ class NotesModal(discord.ui.Modal, title="Additional Notes"):
     notes = discord.ui.TextInput(
         label="Notes (optional)",
         required=False,
-        placeholder="Promo code, specs, urgency..."
+        placeholder="Promo code, urgency, specs..."
     )
 
     async def on_submit(self, interaction: discord.Interaction):
+
         try:
+            await interaction.response.defer(ephemeral=True)
+
             item = self.item.strip()
             company = self.company.strip()
             link = self.link.strip()
@@ -87,7 +90,7 @@ class NotesModal(discord.ui.Modal, title="Additional Notes"):
 
             total = float(price) * int(quantity)
 
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"✅ Order placed: **{item} x{quantity}** (Total: ${total:.2f})",
                 ephemeral=True
             )
@@ -105,10 +108,11 @@ class NotesModal(discord.ui.Modal, title="Additional Notes"):
 
         except Exception:
             traceback.print_exc()
-            await interaction.response.send_message(
-                "❌ Failed to submit order.",
-                ephemeral=True
-            )
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "❌ Failed to submit order.",
+                    ephemeral=True
+                )
 
 
 # ----------------------------
@@ -133,7 +137,7 @@ class OrderModal(discord.ui.Modal, title="Place Order"):
         )
 
         await interaction.response.send_message(
-            "✅ Step 1 complete. Click below to finish your order.",
+            "✅ Step 1 complete. Click below to add notes and finish your order.",
             view=view,
             ephemeral=True
         )
@@ -153,7 +157,10 @@ class NotesButtonView(discord.ui.View):
         self.price = price
         self.quantity = quantity
 
-    @discord.ui.button(label="Add Notes & Finish Order", style=discord.ButtonStyle.green)
+    @discord.ui.button(
+        label="Add Notes & Finish Order",
+        style=discord.ButtonStyle.green
+    )
     async def finish(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         await interaction.response.send_modal(
@@ -172,16 +179,7 @@ class NotesButtonView(discord.ui.View):
 # ----------------------------
 @bot.tree.command(name="order", description="Place a robotics order")
 async def order(interaction: discord.Interaction):
-    try:
-        await interaction.response.send_modal(OrderModal())
-    except Exception as e:
-        print("❌ ORDER ERROR:", e)
-
-        if not interaction.response.is_done():
-            await interaction.response.send_message(
-                "❌ Could not open order form.",
-                ephemeral=True
-            )
+    await interaction.response.send_modal(OrderModal())
 
 
 # ----------------------------
