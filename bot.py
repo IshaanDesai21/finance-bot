@@ -43,43 +43,39 @@ except Exception as e:
 
 
 # ----------------------------
-# ORDER MODAL
+# STEP 2 MODAL (NOTES)
 # ----------------------------
-class OrderModal(discord.ui.Modal, title="Place Order"):
+class NotesModal(discord.ui.Modal, title="Additional Notes"):
 
-    item = discord.ui.TextInput(label="Item")
-    company = discord.ui.TextInput(label="Company")
-    link = discord.ui.TextInput(label="Link")
-    price = discord.ui.TextInput(label="Price")
+    def __init__(self, item, company, link, price, quantity):
+        super().__init__()
 
-    quantity = discord.ui.TextInput(
-        label="Quantity",
-        placeholder="e.g. 1"
-    )
+        self.item = item
+        self.company = company
+        self.link = link
+        self.price = price
+        self.quantity = quantity
 
     notes = discord.ui.TextInput(
         label="Notes (optional)",
         required=False,
-        placeholder="Promo code, specs, urgency, etc."
+        placeholder="Promo code, urgency, specs, etc."
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
 
         try:
-            item = self.item.value.strip()
-            company = self.company.value.strip()
-            link = self.link.value.strip()
+            item = self.item.strip()
+            company = self.company.strip()
+            link = self.link.strip()
 
-            price = re.sub(r"[^0-9.]", "", self.price.value) or "0"
-            quantity = re.sub(r"[^0-9]", "", self.quantity.value) or "1"
+            price = re.sub(r"[^0-9.]", "", self.price) or "0"
+            quantity = re.sub(r"[^0-9]", "", self.quantity) or "1"
             notes = self.notes.value.strip() if self.notes.value else ""
 
             timestamp = datetime.now().strftime("%d/%m/%Y %H:%M")
 
-            # ----------------------------
-            # GOOGLE SHEETS WRITE
-            # ----------------------------
+            # GOOGLE SHEETS
             if sheet:
                 sheet.append_row([
                     item,
@@ -94,13 +90,11 @@ class OrderModal(discord.ui.Modal, title="Place Order"):
 
             total = float(price) * int(quantity)
 
-            # PRIVATE RESPONSE
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 f"✅ Order placed: **{item} x{quantity}** (Total: ${total:.2f})",
                 ephemeral=True
             )
 
-            # PUBLIC LOG
             await interaction.channel.send(
                 f"📦 **New Order Logged**\n"
                 f"**Item:** {item}\n"
@@ -113,17 +107,53 @@ class OrderModal(discord.ui.Modal, title="Place Order"):
             )
 
         except Exception as e:
-            print("❌ MODAL ERROR:")
+            print("❌ ERROR IN NOTES MODAL:")
             traceback.print_exc()
 
-            await interaction.followup.send(
-                "❌ Something went wrong while submitting your order.",
+            await interaction.response.send_message(
+                "❌ Something went wrong saving your order.",
                 ephemeral=True
             )
 
 
 # ----------------------------
-# /ORDER COMMAND (NO RESTRICTIONS)
+# STEP 1 MODAL (MAIN ORDER)
+# ----------------------------
+class OrderModal(discord.ui.Modal, title="Place Order"):
+
+    item = discord.ui.TextInput(label="Item")
+    company = discord.ui.TextInput(label="Company")
+    link = discord.ui.TextInput(label="Link")
+    price = discord.ui.TextInput(label="Price")
+    quantity = discord.ui.TextInput(label="Quantity", placeholder="e.g. 1")
+
+    async def on_submit(self, interaction: discord.Interaction):
+
+        try:
+            # Immediately move to next step
+            await interaction.response.send_modal(
+                NotesModal(
+                    item=self.item.value,
+                    company=self.company.value,
+                    link=self.link.value,
+                    price=self.price.value,
+                    quantity=self.quantity.value
+                )
+            )
+
+        except Exception as e:
+            print("❌ ORDER MODAL ERROR:")
+            traceback.print_exc()
+
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "❌ Could not continue order process.",
+                    ephemeral=True
+                )
+
+
+# ----------------------------
+# /ORDER COMMAND
 # ----------------------------
 @bot.tree.command(name="order", description="Place a robotics order")
 async def order(interaction: discord.Interaction):
@@ -131,7 +161,7 @@ async def order(interaction: discord.Interaction):
         await interaction.response.send_modal(OrderModal())
 
     except Exception as e:
-        print("❌ ORDER COMMAND ERROR:", e)
+        print("❌ /ORDER ERROR:", e)
 
         if not interaction.response.is_done():
             await interaction.response.send_message(
