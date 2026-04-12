@@ -52,54 +52,36 @@ def get_next_row(sheet):
 
 
 # ----------------------------
-# STEP 2 MODAL (NOTES + CATEGORY)
+# CATEGORY DROPDOWN VIEW
 # ----------------------------
-class NotesModal(discord.ui.Modal, title="Finalize Order"):
+class CategoryView(discord.ui.View):
 
-    def __init__(self, item, company, link, price, quantity):
-        super().__init__()
-        self.item = item
-        self.company = company
-        self.link = link
-        self.price = price
-        self.quantity = quantity
+    def __init__(self, data):
+        super().__init__(timeout=120)
+        self.data = data
 
-    notes = discord.ui.TextInput(
-        label="Notes (optional)",
-        required=False,
-        placeholder="Promo code, urgency, specs..."
+    @discord.ui.select(
+        placeholder="Select a category",
+        options=[
+            discord.SelectOption(label="Hardware"),
+            discord.SelectOption(label="Software"),
+            discord.SelectOption(label="Outreach"),
+            discord.SelectOption(label="Food"),
+            discord.SelectOption(label="Miscellaneous"),
+        ]
     )
-
-    category = discord.ui.TextInput(
-        label="Category",
-        placeholder="hardware / software / outreach / food / miscellaneous"
-    )
-
-    async def on_submit(self, interaction: discord.Interaction):
+    async def select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
 
         try:
-            await interaction.response.defer(ephemeral=True)
+            category = select.values[0].lower()
 
-            item = str(self.item).strip()
-            company = str(self.company).strip()
-            link = str(self.link).strip()
-
-            price_raw = re.sub(r"[^0-9.]", "", str(self.price)) or "0"
-            quantity_raw = re.sub(r"[^0-9]", "", str(self.quantity)) or "1"
-
-            price = float(price_raw)
-            quantity = int(quantity_raw)
-
-            notes = self.notes.value.strip() if self.notes.value else ""
-            category = self.category.value.strip().lower()
+            item, company, link, price, quantity, notes = self.data
 
             timestamp = datetime.now(
                 ZoneInfo("America/Chicago")
             ).strftime("%d/%m/%Y %I:%M %p")
 
-            # ----------------------------
-            # WRITE TO SHEET
-            # ----------------------------
+            # WRITE TO SHEETS
             if sheet:
                 row = get_next_row(sheet)
 
@@ -120,10 +102,9 @@ class NotesModal(discord.ui.Modal, title="Finalize Order"):
                 )
 
             total = price * quantity
-
             item_linked = f"[{item}]({link})" if link else item
 
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 f"✅ Order placed: **{item} x{quantity}** (Total: ${total:.2f})",
                 ephemeral=True
             )
@@ -140,24 +121,70 @@ class NotesModal(discord.ui.Modal, title="Finalize Order"):
                 f"**Time:** {timestamp}"
             )
 
-            # REMOVE BUTTON
-            try:
-                await interaction.message.edit(view=None)
-            except:
-                pass
+            # REMOVE DROPDOWN
+            await interaction.message.edit(view=None)
 
         except Exception:
             traceback.print_exc()
-
             if not interaction.response.is_done():
                 await interaction.response.send_message(
-                    "❌ Failed to submit order.",
+                    "❌ Failed to finalize order.",
                     ephemeral=True
                 )
 
 
 # ----------------------------
-# STEP 1 MODAL
+# NOTES MODAL
+# ----------------------------
+class NotesModal(discord.ui.Modal, title="Finalize Order"):
+
+    def __init__(self, item, company, link, price, quantity):
+        super().__init__()
+        self.item = item
+        self.company = company
+        self.link = link
+        self.price = price
+        self.quantity = quantity
+
+    notes = discord.ui.TextInput(
+        label="Notes (optional)",
+        required=False,
+        placeholder="Promo code, urgency, specs..."
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+
+        try:
+            item = str(self.item).strip()
+            company = str(self.company).strip()
+            link = str(self.link).strip()
+
+            price_raw = re.sub(r"[^0-9.]", "", str(self.price)) or "0"
+            quantity_raw = re.sub(r"[^0-9]", "", str(self.quantity)) or "1"
+
+            price = float(price_raw)
+            quantity = int(quantity_raw)
+
+            notes = self.notes.value.strip() if self.notes.value else ""
+
+            view = CategoryView((item, company, link, price, quantity, notes))
+
+            await interaction.response.send_message(
+                "Select a category to finish your order:",
+                view=view,
+                ephemeral=True
+            )
+
+        except Exception:
+            traceback.print_exc()
+            await interaction.response.send_message(
+                "❌ Failed to process notes.",
+                ephemeral=True
+            )
+
+
+# ----------------------------
+# ORDER MODAL
 # ----------------------------
 class OrderModal(discord.ui.Modal, title="Place Order"):
 
@@ -169,53 +196,19 @@ class OrderModal(discord.ui.Modal, title="Place Order"):
 
     async def on_submit(self, interaction: discord.Interaction):
 
-        view = NotesButtonView(
-            item=self.item.value,
-            company=self.company.value,
-            link=self.link.value,
-            price=self.price.value,
-            quantity=self.quantity.value
-        )
-
-        await interaction.response.send_message(
-            "✅ Step 1 complete. Click below to finish your order.",
-            view=view,
-            ephemeral=True
-        )
-
-
-# ----------------------------
-# BUTTON VIEW
-# ----------------------------
-class NotesButtonView(discord.ui.View):
-
-    def __init__(self, item, company, link, price, quantity):
-        super().__init__(timeout=120)
-        self.item = item
-        self.company = company
-        self.link = link
-        self.price = price
-        self.quantity = quantity
-
-    @discord.ui.button(
-        label="Add Notes & Finish Order",
-        style=discord.ButtonStyle.green
-    )
-    async def finish(self, interaction: discord.Interaction, button: discord.ui.Button):
-
         await interaction.response.send_modal(
             NotesModal(
-                self.item,
-                self.company,
-                self.link,
-                self.price,
-                self.quantity
+                self.item.value,
+                self.company.value,
+                self.link.value,
+                self.price.value,
+                self.quantity.value
             )
         )
 
 
 # ----------------------------
-# /ORDER COMMAND
+# COMMAND
 # ----------------------------
 @bot.tree.command(name="order", description="Place a robotics order")
 async def order(interaction: discord.Interaction):
