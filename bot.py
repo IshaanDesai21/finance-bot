@@ -17,9 +17,21 @@ intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ----------------------------
-# IN-MEMORY TEAM STORAGE
+# PERSISTENT TEAM STORAGE
 # ----------------------------
-user_teams = {}
+TEAMS_FILE = "user_teams.json"
+
+def load_teams():
+    if os.path.exists(TEAMS_FILE):
+        with open(TEAMS_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_teams():
+    with open(TEAMS_FILE, "w") as f:
+        json.dump(user_teams, f)
+
+user_teams = load_teams()
 
 # ----------------------------
 # GOOGLE SHEETS SETUP
@@ -74,7 +86,7 @@ def get_next_row(sheet):
 # SHARED WRITE TO SHEET
 # Column layout:
 # A=item, B=company, C=link, D=price, E=quantity,
-# F=notes, G=category, H=team, I=total, J=timestamp,
+# F=notes, G=category, H=team, I=timestamp, J=total,
 # (K-N gap), O=username
 # ----------------------------
 def write_order_to_sheet(sheet, row, item, company, link, price, quantity,
@@ -92,8 +104,8 @@ def write_order_to_sheet(sheet, row, item, company, link, price, quantity,
             notes,
             category.capitalize(),
             team,
-            total,
-            timestamp
+            timestamp,
+            total
         ]],
         value_input_option="USER_ENTERED"
     )
@@ -128,6 +140,7 @@ class TeamSelectView(discord.ui.View):
     async def select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
         team = select.values[0]
         user_teams[str(interaction.user.id)] = team
+        save_teams()
 
         await interaction.response.edit_message(
             content=f"✅ You've been assigned to **{team}**! You can now use `/order`.",
@@ -387,10 +400,10 @@ def build_summary(rows: list[list], month: int, year: int) -> discord.Embed:
         if len(row) < 10:
             row += [""] * (10 - len(row))
 
-        timestamp_str = row[9].strip()
-        total_str     = row[8].strip()
-        team          = row[7].strip()
-        category      = row[6].strip()
+        timestamp_str = row[8].strip()   # column I
+        total_str     = row[9].strip()   # column J
+        team          = row[7].strip()   # column H
+        category      = row[6].strip()   # column G
 
         if not timestamp_str or not total_str:
             continue
@@ -432,12 +445,12 @@ def build_summary(rows: list[list], month: int, year: int) -> discord.Embed:
     team_lines = "\n".join(
         f"`{t:<12}` ${v:.2f}" for t, v in team_totals.items() if v > 0
     ) or "No orders this month."
-    embed.add_field(name="y Team", value=team_lines, inline=True)
+    embed.add_field(name="🤖 By Team", value=team_lines, inline=True)
 
     cat_lines = "\n".join(
         f"`{c.title():<14}` ${v:.2f}" for c, v in cat_totals.items() if v > 0
     ) or "No orders this month."
-    embed.add_field(name="By Category", value=cat_lines, inline=True)
+    embed.add_field(name="🗂️ By Category", value=cat_lines, inline=True)
 
     embed.set_footer(text="Data pulled from Westwood Finances sheet")
     return embed
