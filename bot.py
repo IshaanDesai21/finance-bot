@@ -86,15 +86,25 @@ def get_next_row(sheet):
 # SHARED WRITE TO SHEET
 # Column layout:
 # A=item, B=company, C=link, D=price, E=quantity,
-# F=notes, G=category, H=team, I=timestamp, J=total,
-# (K-N gap), O=username
+# F=notes, G=category, H=team, I=timestamp,
+# J=total (formula), K=Pending Review,
+# (L-M gap), N=order count formula,
+# O=username
 # ----------------------------
 def write_order_to_sheet(sheet, row, item, company, link, price, quantity,
                           notes, category, team, timestamp, username):
-    total = price * quantity
+
+    # Column J: formula-based total using PRODUCT of D and E on the same row
+    total_formula = f"=PRODUCT(D{row}:E{row})"
+
+    # Column K: always "Pending Review"
+    pending_review = "Pending Review"
+
+    # Column N: order count formula anchored from row 3
+    count_formula = f'=IF(A{row}<>"", COUNTIF($A$3:A{row}, "<>"), "")'
 
     sheet.update(
-        f"A{row}:J{row}",
+        f"A{row}:K{row}",
         [[
             item,
             company,
@@ -105,8 +115,15 @@ def write_order_to_sheet(sheet, row, item, company, link, price, quantity,
             category.capitalize(),
             team,
             timestamp,
-            total
+            total_formula,   # J — formula: =PRODUCT(D{row}:E{row})
+            pending_review   # K — always "Pending Review"
         ]],
+        value_input_option="USER_ENTERED"
+    )
+
+    sheet.update(
+        f"N{row}",
+        [[count_formula]],   # N — formula: =IF(A{row}<>"", COUNTIF($A$3:A{row}, "<>"), "")
         value_input_option="USER_ENTERED"
     )
 
@@ -116,7 +133,9 @@ def write_order_to_sheet(sheet, row, item, company, link, price, quantity,
         value_input_option="USER_ENTERED"
     )
 
-    return total
+    # Return a display total (price * quantity) for the Discord message,
+    # since the sheet formula result isn't readable back immediately
+    return price * quantity
 
 
 # ----------------------------
