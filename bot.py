@@ -358,7 +358,7 @@ class TestPasswordModal(discord.ui.Modal, title="Test Order Authentication"):
 
         try:
             item, company, link, price, quantity, category = random.choice(TEST_PARTS)
-            notes     = "AUTO TEST ORDER"
+            notes     = "DISCORD TEST"
             timestamp = datetime.now(ZoneInfo("America/Chicago")).strftime("%m/%d/%Y %I:%M %p")
             row       = get_next_row(sheet)
 
