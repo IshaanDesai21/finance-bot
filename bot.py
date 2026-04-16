@@ -194,7 +194,7 @@ class CategoryView(discord.ui.View):
 
             timestamp = datetime.now(
                 ZoneInfo("America/Chicago")
-            ).strftime("%d/%m/%Y %I:%M %p")
+            ).strftime("%m/%d/%Y %I:%M %p")
 
             if sheet:
                 row   = get_next_row(sheet)
@@ -359,7 +359,7 @@ class TestPasswordModal(discord.ui.Modal, title="Test Order Authentication"):
         try:
             item, company, link, price, quantity, category = random.choice(TEST_PARTS)
             notes     = "AUTO TEST ORDER"
-            timestamp = datetime.now(ZoneInfo("America/Chicago")).strftime("%d/%m/%Y %I:%M %p")
+            timestamp = datetime.now(ZoneInfo("America/Chicago")).strftime("%m/%d/%Y %I:%M %p")
             row       = get_next_row(sheet)
 
             total = write_order_to_sheet(
@@ -428,7 +428,7 @@ def build_summary(rows: list[list], month: int, year: int) -> discord.Embed:
             continue
 
         try:
-            dt = datetime.strptime(timestamp_str, "%d/%m/%Y %I:%M %p")
+            dt = datetime.strptime(timestamp_str, "%m/%d/%Y %I:%M %p")
         except ValueError:
             continue
 
