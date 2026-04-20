@@ -18,6 +18,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ----------------------------
 # PERSISTENT TEAM STORAGE
+# user_teams[user_id] = {"team": "FRC", "full_name": "Ishaan Desai"}
 # ----------------------------
 TEAMS_FILE = "user_teams.json"
 
@@ -32,6 +33,23 @@ def save_teams():
         json.dump(user_teams, f)
 
 user_teams = load_teams()
+
+# Helper: get team string for a user
+def get_team(user_id: str) -> str | None:
+    entry = user_teams.get(user_id)
+    if isinstance(entry, dict):
+        return entry.get("team")
+    # Legacy support: plain string stored before this update
+    if isinstance(entry, str):
+        return entry
+    return None
+
+# Helper: get display name (full name if set, else Discord username)
+def get_display_name(user_id: str, fallback_username: str) -> str:
+    entry = user_teams.get(user_id)
+    if isinstance(entry, dict):
+        return entry.get("full_name") or fallback_username
+    return fallback_username
 
 # ----------------------------
 # GOOGLE SHEETS SETUP
@@ -89,19 +107,14 @@ def get_next_row(sheet):
 # F=notes, G=category, H=team, I=timestamp,
 # J=total (formula), K=Pending Review,
 # (L-M gap), N=order count formula,
-# O=username
+# O=full name (or username if not set)
 # ----------------------------
 def write_order_to_sheet(sheet, row, item, company, link, price, quantity,
-                          notes, category, team, timestamp, username):
+                          notes, category, team, timestamp, display_name):
 
-    # Column J: formula-based total using PRODUCT of D and E on the same row
-    total_formula = f"=PRODUCT(D{row}:E{row})"
-
-    # Column K: always "Pending Review"
+    total_formula  = f"=PRODUCT(D{row}:E{row})"
     pending_review = "Pending Review"
-
-    # Column N: order count formula anchored from row 3
-    count_formula = f'=IF(A{row}<>"", COUNTIF($A$3:A{row}, "<>"), "")'
+    count_formula  = f'=IF(A{row}<>"", COUNTIF($A$3:A{row}, "<>"), "")'
 
     sheet.update(
         f"A{row}:K{row}",
@@ -115,27 +128,60 @@ def write_order_to_sheet(sheet, row, item, company, link, price, quantity,
             category.capitalize(),
             team,
             timestamp,
-            total_formula,   # J — formula: =PRODUCT(D{row}:E{row})
-            pending_review   # K — always "Pending Review"
+            total_formula,
+            pending_review
         ]],
         value_input_option="USER_ENTERED"
     )
 
     sheet.update(
         f"N{row}",
-        [[count_formula]],   # N — formula: =IF(A{row}<>"", COUNTIF($A$3:A{row}, "<>"), "")
+        [[count_formula]],
         value_input_option="USER_ENTERED"
     )
 
     sheet.update(
         f"O{row}",
-        [[username]],
+        [[display_name]],          # Full name instead of username
         value_input_option="USER_ENTERED"
     )
 
-    # Return a display total (price * quantity) for the Discord message,
-    # since the sheet formula result isn't readable back immediately
     return price * quantity
+
+
+# ----------------------------
+# FULL NAME MODAL (shown after team selection)
+# ----------------------------
+class FullNameModal(discord.ui.Modal, title="Enter Your Official Name"):
+
+    def __init__(self, team: str):
+        super().__init__()
+        self.team = team
+
+    full_name = discord.ui.TextInput(
+        label="Official First and Last Name",
+        placeholder="e.g. Ishaan Desai",
+        min_length=2,
+        max_length=80,
+        required=True,
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        name = self.full_name.value.strip()
+
+        user_teams[str(interaction.user.id)] = {
+            "team": self.team,
+            "full_name": name,
+        }
+        save_teams()
+
+        await interaction.response.edit_message(
+            content=(
+                f"✅ You've been assigned to **{self.team}** as **{name}**!\n"
+                f"You can now use `/order`."
+            ),
+            view=None
+        )
 
 
 # ----------------------------
@@ -158,13 +204,8 @@ class TeamSelectView(discord.ui.View):
     )
     async def select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
         team = select.values[0]
-        user_teams[str(interaction.user.id)] = team
-        save_teams()
-
-        await interaction.response.edit_message(
-            content=f"✅ You've been assigned to **{team}**! You can now use `/order`.",
-            view=None
-        )
+        # Open the name modal — team is saved only after name is confirmed
+        await interaction.response.send_modal(FullNameModal(team))
 
 
 # ----------------------------
@@ -190,7 +231,7 @@ class CategoryView(discord.ui.View):
 
         try:
             category = select.values[0].lower()
-            item, company, link, price, quantity, notes, team = self.data
+            item, company, link, price, quantity, notes, team, display_name = self.data
 
             timestamp = datetime.now(
                 ZoneInfo("America/Chicago")
@@ -200,7 +241,7 @@ class CategoryView(discord.ui.View):
                 row   = get_next_row(sheet)
                 total = write_order_to_sheet(
                     sheet, row, item, company, link, price, quantity,
-                    notes, category, team, timestamp, interaction.user.name
+                    notes, category, team, timestamp, display_name
                 )
             else:
                 total = price * quantity
@@ -222,7 +263,7 @@ class CategoryView(discord.ui.View):
                 f"**Category:** {category.capitalize()}\n"
                 f"**Notes:** {notes if notes else 'None'}\n"
                 f"**Team:** {team}\n"
-                f"**User:** {interaction.user.mention}\n"
+                f"**User:** {interaction.user.mention} ({display_name})\n"
                 f"**Time:** {timestamp}"
             )
 
@@ -255,10 +296,10 @@ class NotesModal(discord.ui.Modal, title="Finalize Order"):
     async def on_submit(self, interaction: discord.Interaction):
 
         try:
-            item, company, link, price, quantity, team = self.data
+            item, company, link, price, quantity, team, display_name = self.data
             notes = self.notes.value.strip() if self.notes.value else ""
 
-            view = CategoryView((item, company, link, price, quantity, notes, team))
+            view = CategoryView((item, company, link, price, quantity, notes, team, display_name))
 
             await interaction.response.send_message(
                 "Select a category to finish your order:",
@@ -299,9 +340,10 @@ class OrderModal(discord.ui.Modal, title="Place Order"):
     price    = discord.ui.TextInput(label="Price")
     quantity = discord.ui.TextInput(label="Quantity", placeholder="e.g. 1")
 
-    def __init__(self, team: str):
+    def __init__(self, team: str, display_name: str):
         super().__init__()
-        self.team = team
+        self.team         = team
+        self.display_name = display_name
 
     async def on_submit(self, interaction: discord.Interaction):
 
@@ -316,7 +358,7 @@ class OrderModal(discord.ui.Modal, title="Place Order"):
             price    = float(price_raw)
             quantity = int(quantity_raw)
 
-            data = (item, company, link, price, quantity, self.team)
+            data = (item, company, link, price, quantity, self.team, self.display_name)
             view = ContinueView(data)
 
             await interaction.response.send_message(
@@ -344,9 +386,10 @@ class TestPasswordModal(discord.ui.Modal, title="Test Order Authentication"):
         required=True
     )
 
-    def __init__(self, team: str):
+    def __init__(self, team: str, display_name: str):
         super().__init__()
-        self.team = team
+        self.team         = team
+        self.display_name = display_name
 
     async def on_submit(self, interaction: discord.Interaction):
         if self.password.value.strip() != "hi":
@@ -364,7 +407,7 @@ class TestPasswordModal(discord.ui.Modal, title="Test Order Authentication"):
 
             total = write_order_to_sheet(
                 sheet, row, item, company, link, price, quantity,
-                notes, category, self.team, timestamp, interaction.user.name
+                notes, category, self.team, timestamp, self.display_name
             )
 
             item_linked = f"[{item}]({link})"
@@ -376,6 +419,7 @@ class TestPasswordModal(discord.ui.Modal, title="Test Order Authentication"):
                 f"**Price:** ${price:.2f} x{quantity} = **${total:.2f}**\n"
                 f"**Category:** {category.capitalize()}\n"
                 f"**Team:** {self.team}\n"
+                f"**Name on sheet:** {self.display_name}\n"
                 f"**Row written:** {row}",
                 ephemeral=True
             )
@@ -390,7 +434,7 @@ class TestPasswordModal(discord.ui.Modal, title="Test Order Authentication"):
                 f"**Category:** {category.capitalize()}\n"
                 f"**Notes:** {notes}\n"
                 f"**Team:** {self.team}\n"
-                f"**User:** {interaction.user.mention}\n"
+                f"**User:** {interaction.user.mention} ({self.display_name})\n"
                 f"**Time:** {timestamp}"
             )
 
@@ -478,11 +522,11 @@ def build_summary(rows: list[list], month: int, year: int) -> discord.Embed:
 # ----------------------------
 # COMMANDS
 # ----------------------------
-@bot.tree.command(name="set-team", description="Set your team (one-time setup required before ordering)")
+@bot.tree.command(name="set-team", description="Set your team and official name (required before ordering)")
 async def set_team(interaction: discord.Interaction):
     view = TeamSelectView()
     await interaction.response.send_message(
-        "Select your team below. This only needs to be done once:",
+        "Select your team below, then you'll be asked for your official name. This only needs to be done once:",
         view=view,
         ephemeral=True
     )
@@ -490,7 +534,8 @@ async def set_team(interaction: discord.Interaction):
 
 @bot.tree.command(name="order", description="Place a robotics order")
 async def order(interaction: discord.Interaction):
-    team = user_teams.get(str(interaction.user.id))
+    user_id = str(interaction.user.id)
+    team    = get_team(user_id)
 
     if not team:
         await interaction.response.send_message(
@@ -499,7 +544,8 @@ async def order(interaction: discord.Interaction):
         )
         return
 
-    await interaction.response.send_modal(OrderModal(team))
+    display_name = get_display_name(user_id, interaction.user.name)
+    await interaction.response.send_modal(OrderModal(team, display_name))
 
 
 @bot.tree.command(name="summary", description="View monthly spending summary by team and category")
@@ -523,7 +569,8 @@ async def summary(interaction: discord.Interaction):
 
 @bot.tree.command(name="test", description="Submit a random test order to verify the bot and sheet are working")
 async def test(interaction: discord.Interaction):
-    team = user_teams.get(str(interaction.user.id))
+    user_id = str(interaction.user.id)
+    team    = get_team(user_id)
 
     if not team:
         await interaction.response.send_message(
@@ -536,7 +583,8 @@ async def test(interaction: discord.Interaction):
         await interaction.response.send_message("❌ Google Sheets is not connected.", ephemeral=True)
         return
 
-    await interaction.response.send_modal(TestPasswordModal(team))
+    display_name = get_display_name(user_id, interaction.user.name)
+    await interaction.response.send_modal(TestPasswordModal(team, display_name))
 
 
 # ----------------------------
