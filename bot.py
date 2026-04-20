@@ -198,7 +198,7 @@ class TeamSelectView(discord.ui.View):
             discord.SelectOption(label="FRC",         value="FRC"),
             discord.SelectOption(label="Kunai",       value="Kunai"),
             discord.SelectOption(label="Hunga Munga", value="Hunga Munga"),
-            discord.SelectOption(label="Atl Atl",     value="Atl Atl"),
+            discord.SelectOption(label="Atlatl",     value="Atlatl"),
             discord.SelectOption(label="Slingshot",   value="Slingshot"),
         ]
     )
@@ -235,7 +235,7 @@ class CategoryView(discord.ui.View):
 
             timestamp = datetime.now(
                 ZoneInfo("America/Chicago")
-            ).strftime("%m/%d/%Y %I:%M %p")
+            ).strftime("%-m/%-d/%Y %H:%M:%S")
 
             if sheet:
                 row   = get_next_row(sheet)
@@ -402,7 +402,7 @@ class TestPasswordModal(discord.ui.Modal, title="Test Order Authentication"):
         try:
             item, company, link, price, quantity, category = random.choice(TEST_PARTS)
             notes     = "DISCORD TEST"
-            timestamp = datetime.now(ZoneInfo("America/Chicago")).strftime("%m/%d/%Y %I:%M %p")
+            timestamp = datetime.now(ZoneInfo("America/Chicago")).strftime("%-m/%-d/%Y %H:%M:%S")
             row       = get_next_row(sheet)
 
             total = write_order_to_sheet(
@@ -451,7 +451,7 @@ class TestPasswordModal(discord.ui.Modal, title="Test Order Authentication"):
 # SUMMARY HELPER
 # ----------------------------
 def build_summary(rows: list[list], month: int, year: int) -> discord.Embed:
-    TEAMS      = ["FRC", "Kunai", "Hunga Munga", "Atl Atl", "Slingshot"]
+    TEAMS      = ["FRC", "Kunai", "Hunga Munga", "Atlatl", "Slingshot"]
     CATEGORIES = ["hardware", "software", "outreach", "food", "miscellaneous"]
 
     team_totals = {t: 0.0 for t in TEAMS}
@@ -472,7 +472,10 @@ def build_summary(rows: list[list], month: int, year: int) -> discord.Embed:
             continue
 
         try:
-            dt = datetime.strptime(timestamp_str, "%m/%d/%Y %I:%M %p")
+            try:
+                dt = datetime.strptime(timestamp_str, "%m/%d/%Y %H:%M:%S")
+            except ValueError:
+                continue
         except ValueError:
             continue
 
