@@ -9,6 +9,7 @@ import json
 import re
 import traceback
 import random
+import string
 
 # ----------------------------
 # DISCORD SETUP
@@ -39,7 +40,6 @@ def get_team(user_id: str) -> str | None:
     entry = user_teams.get(user_id)
     if isinstance(entry, dict):
         return entry.get("team")
-    # Legacy support: plain string stored before this update
     if isinstance(entry, str):
         return entry
     return None
@@ -93,6 +93,14 @@ TEST_PARTS = [
 
 
 # ----------------------------
+# ORDER UUID GENERATOR
+# 6-character uppercase alphanumeric, e.g. 2B5SWE
+# ----------------------------
+def generate_order_id() -> str:
+    return "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+
+# ----------------------------
 # FIND NEXT EMPTY ROW
 # ----------------------------
 def get_next_row(sheet):
@@ -106,7 +114,7 @@ def get_next_row(sheet):
 # A=item, B=company, C=link, D=price, E=quantity,
 # F=notes, G=category, H=team, I=timestamp,
 # J=total (formula), K=Pending Review,
-# (L-M gap), N=order count formula,
+# L=(gap), M=order UUID, N=order count formula,
 # O=full name (or username if not set)
 # ----------------------------
 def write_order_to_sheet(sheet, row, item, company, link, price, quantity,
@@ -115,7 +123,9 @@ def write_order_to_sheet(sheet, row, item, company, link, price, quantity,
     total_formula  = f"=PRODUCT(D{row}:E{row})"
     pending_review = "Pending Review"
     count_formula  = f'=IF(A{row}<>"", COUNTIF($A$3:A{row}, "<>"), "")'
+    order_id       = generate_order_id()
 
+    # Write A:K in one call
     sheet.update(
         f"A{row}:K{row}",
         [[
@@ -128,25 +138,21 @@ def write_order_to_sheet(sheet, row, item, company, link, price, quantity,
             category.capitalize(),
             team,
             timestamp,
-            total_formula,
-            pending_review
+            total_formula,   # J
+            pending_review   # K
         ]],
         value_input_option="USER_ENTERED"
     )
 
+    # Write M:O in one call (L is intentionally skipped/empty)
+    # M = order UUID, N = count formula, O = full name
     sheet.update(
-        f"N{row}",
-        [[count_formula]],
+        f"M{row}:O{row}",
+        [[order_id, count_formula, display_name]],
         value_input_option="USER_ENTERED"
     )
 
-    sheet.update(
-        f"O{row}",
-        [[display_name]],          # Full name instead of username
-        value_input_option="USER_ENTERED"
-    )
-
-    return price * quantity
+    return price * quantity, order_id
 
 
 # ----------------------------
@@ -198,13 +204,12 @@ class TeamSelectView(discord.ui.View):
             discord.SelectOption(label="FRC",         value="FRC"),
             discord.SelectOption(label="Kunai",       value="Kunai"),
             discord.SelectOption(label="Hunga Munga", value="Hunga Munga"),
-            discord.SelectOption(label="Atlatl",     value="Atlatl"),
+            discord.SelectOption(label="Atlatl",      value="Atlatl"),
             discord.SelectOption(label="Slingshot",   value="Slingshot"),
         ]
     )
     async def select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
         team = select.values[0]
-        # Open the name modal — team is saved only after name is confirmed
         await interaction.response.send_modal(FullNameModal(team))
 
 
@@ -238,18 +243,19 @@ class CategoryView(discord.ui.View):
             ).strftime("%-m/%-d/%Y %H:%M:%S")
 
             if sheet:
-                row   = get_next_row(sheet)
-                total = write_order_to_sheet(
+                row             = get_next_row(sheet)
+                total, order_id = write_order_to_sheet(
                     sheet, row, item, company, link, price, quantity,
                     notes, category, team, timestamp, display_name
                 )
             else:
-                total = price * quantity
+                total    = price * quantity
+                order_id = generate_order_id()
 
             item_linked = f"[{item}]({link})" if link else item
 
             await interaction.response.send_message(
-                f"✅ Order placed: **{item} x{quantity}** (Total: ${total:.2f})",
+                f"✅ Order placed: **{item} x{quantity}** (Total: ${total:.2f}) — Order ID: `{order_id}`",
                 ephemeral=True
             )
 
@@ -264,6 +270,7 @@ class CategoryView(discord.ui.View):
                 f"**Notes:** {notes if notes else 'None'}\n"
                 f"**Team:** {team}\n"
                 f"**User:** {interaction.user.mention} ({display_name})\n"
+                f"**Order ID:** `{order_id}`\n"
                 f"**Time:** {timestamp}"
             )
 
@@ -405,7 +412,7 @@ class TestPasswordModal(discord.ui.Modal, title="Test Order Authentication"):
             timestamp = datetime.now(ZoneInfo("America/Chicago")).strftime("%-m/%-d/%Y %H:%M:%S")
             row       = get_next_row(sheet)
 
-            total = write_order_to_sheet(
+            total, order_id = write_order_to_sheet(
                 sheet, row, item, company, link, price, quantity,
                 notes, category, self.team, timestamp, self.display_name
             )
@@ -420,6 +427,7 @@ class TestPasswordModal(discord.ui.Modal, title="Test Order Authentication"):
                 f"**Category:** {category.capitalize()}\n"
                 f"**Team:** {self.team}\n"
                 f"**Name on sheet:** {self.display_name}\n"
+                f"**Order ID:** `{order_id}`\n"
                 f"**Row written:** {row}",
                 ephemeral=True
             )
@@ -435,6 +443,7 @@ class TestPasswordModal(discord.ui.Modal, title="Test Order Authentication"):
                 f"**Notes:** {notes}\n"
                 f"**Team:** {self.team}\n"
                 f"**User:** {interaction.user.mention} ({self.display_name})\n"
+                f"**Order ID:** `{order_id}`\n"
                 f"**Time:** {timestamp}"
             )
 
@@ -472,10 +481,7 @@ def build_summary(rows: list[list], month: int, year: int) -> discord.Embed:
             continue
 
         try:
-            try:
-                dt = datetime.strptime(timestamp_str, "%m/%d/%Y %H:%M:%S")
-            except ValueError:
-                continue
+            dt = datetime.strptime(timestamp_str, "%m/%d/%Y %H:%M:%S")
         except ValueError:
             continue
 
