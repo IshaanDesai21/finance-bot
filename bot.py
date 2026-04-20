@@ -504,12 +504,12 @@ def build_summary(rows: list[list], month: int, year: int) -> discord.Embed:
     month_name = datetime(year, month, 1).strftime("%B %Y")
 
     embed = discord.Embed(
-        title=f"📊 Spending Summary — {month_name}",
+        title=f"Spending Summary for {month_name}",
         color=discord.Color.blurple()
     )
 
     embed.add_field(
-        name="💰 Grand Total",
+        name="Grand Total",
         value=f"**${grand_total:.2f}** across {order_count} order{'s' if order_count != 1 else ''}",
         inline=False
     )
@@ -517,12 +517,12 @@ def build_summary(rows: list[list], month: int, year: int) -> discord.Embed:
     team_lines = "\n".join(
         f"`{t:<12}` ${v:.2f}" for t, v in team_totals.items() if v > 0
     ) or "No orders this month."
-    embed.add_field(name="🤖 By Team", value=team_lines, inline=True)
+    embed.add_field(name="", value=team_lines, inline=True)
 
     cat_lines = "\n".join(
         f"`{c.title():<14}` ${v:.2f}" for c, v in cat_totals.items() if v > 0
     ) or "No orders this month."
-    embed.add_field(name="🗂️ By Category", value=cat_lines, inline=True)
+    embed.add_field(name="By Category", value=cat_lines, inline=True)
 
     embed.set_footer(text="Data pulled from Westwood Finances sheet")
     return embed
